@@ -19,7 +19,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/you/django-app.git'
+                    url: 'https://github.com/GowshikM-2005/react-counter-app.git'
             }
         }
 
