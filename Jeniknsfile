@@ -3,10 +3,10 @@ pipeline {
 
     environment {
         REGISTRY = "gowshikm"
-        IMAGE_NAME = "django-app"
+        IMAGE_NAME = "counter-app"
         GIT_CREDENTIALS = "git-creds"
         DOCKER_CREDENTIALS = "docker-creds"
-        MANIFEST_REPO = "git@github.com:you/django-app.git"
+        MANIFEST_REPO = "https://github.com/GowshikM-2005/react-counter-deploy.git"
         MANIFEST_BRANCH = "main"
     }
 
