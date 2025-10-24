@@ -56,18 +56,21 @@ pipeline {
     steps {
         script {
             sh """
+                echo "🧹 Cleaning old manifest folder..."
+                rm -rf react-counter-deploy
+
                 echo "📥 Cloning deployment repo..."
-                git clone -b $MANIFEST_BRANCH $MANIFEST_REPO k8s
-                cd k8s
+                git clone -b $MANIFEST_BRANCH $MANIFEST_REPO react-counter-deploy
 
-                echo "📝 Updating image tag in deployment.yaml..."
-                sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' k8s/deployment.yaml
+                echo "📝 Updating image tag inside k8s/deploy.yml..."
+                sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' react-counter-deploy/k8s/deploy.yml
 
-                echo "✅ Manifest updated successfully!"
+                echo "✅ Manifest updated to $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
             """
         }
     }
 }
+
 
         stage('Commit & Push Manifest') {
             steps {
