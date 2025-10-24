@@ -63,7 +63,7 @@ pipeline {
                 git clone -b $MANIFEST_BRANCH $MANIFEST_REPO react-counter-deploy
 
                 echo "📝 Updating image tag inside k8s/deploy.yml..."
-                sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' react-counter-deploy/k8s/deploy.yml
+                sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' react-counter-deploy/k8s/deployment.yml
 
                 echo "✅ Manifest updated to $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
             """
