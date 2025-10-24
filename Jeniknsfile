@@ -8,6 +8,7 @@ pipeline {
         DOCKER_CREDENTIALS = "docker-hub-creds"
         MANIFEST_REPO = "https://github.com/GowshikM-2005/react-counter-deploy.git"
         MANIFEST_BRANCH = "main"
+        IMAGE_TAG = "v${env.BUILD_NUMBER}"
     }
 
     triggers {
@@ -26,7 +27,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    IMAGE_TAG = "v${env.BUILD_NUMBER}"
+                    
                     sh "docker build -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ."
                 }
             }
@@ -39,7 +40,7 @@ pipeline {
                         passwordVariable: 'PASS')]) {
                     sh '''
                     echo $PASS | docker login -u $USER --password-stdin
-                    docker push $REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     '''
                 }
             }
