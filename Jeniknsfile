@@ -82,7 +82,7 @@ pipeline {
                         git config user.email "gowshik0105@gmail.com"
                         git config user.name "GowshikM-2005"
 
-                        git add k8s/deploy.yml
+                        git add k8s/deployment.yml
                         git commit -m "🚀 Update image tag to $IMAGE_TAG [CI Build #$BUILD_NUMBER]" || echo "No changes to commit."
 
                         echo "📤 Pushing updated manifest..."
