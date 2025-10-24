@@ -72,20 +72,24 @@ pipeline {
 }
 
 
-        stage('Commit & Push Manifest') {
-            steps {
-                withCredentials([sshUserPrivateKey(credentialsId: GIT_CREDENTIALS,
-                        keyFileVariable: 'SSH_KEY')]) {
-                    sh '''
-                    git config user.email "gowshik0105@gmail.com"
-                    git config user.name "GowshikM-2005"
-                    git add k8s/deployment.yaml
-                    git commit -m "Update image tag"
-                    GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
-                        git push origin main
-                    '''
-                }
-            }
+       stage('Commit & Push Manifest') {
+    steps {
+        withCredentials([sshUserPrivateKey(credentialsId: GIT_CREDENTIALS,
+                keyFileVariable: 'SSH_KEY')]) {
+            sh """
+                cd react-counter-deploy
+                git config user.email "gowshik0105@gmail.com"
+                git config user.name "GowshikM-2005"
+
+                git add k8s/deploy.yml
+                git commit -m "🚀 Update image tag to $IMAGE_TAG [CI Build #$BUILD_NUMBER]" || echo "No changes to commit."
+
+                echo "📤 Pushing updated manifest..."
+                GIT_SSH_COMMAND='ssh -i $SSH_KEY -o StrictHostKeyChecking=no' git push origin $MANIFEST_BRANCH
+            """
         }
+    }
+}
+
     }
 }
