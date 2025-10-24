@@ -58,7 +58,7 @@ pipeline {
             sh """
                 echo "📥 Cloning deployment repo..."
                 git clone -b $MANIFEST_BRANCH $MANIFEST_REPO k8s
-                cd react-counter-deploy/k8s
+                cd k8s
 
                 echo "📝 Updating image tag in deployment.yaml..."
                 sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' k8s/deployment.yaml
