@@ -27,7 +27,7 @@ pipeline {
             steps {
                 script {
                     IMAGE_TAG = "v${env.BUILD_NUMBER}"
-                    sh "docker build -t $REGISTRY/$IMAGE_NAME:$IMAGE_TAG ."
+                    sh "docker build -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ."
                 }
             }
         }
@@ -37,17 +37,19 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS,
                         usernameVariable: 'USER',
                         passwordVariable: 'PASS')]) {
-                    sh "echo $PASS | docker login -u $USER --password-stdin"
-                    sh "docker push $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+                    sh '''
+                    echo $PASS | docker login -u $USER --password-stdin
+                    docker push $REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+                    '''
                 }
             }
         }
 
         stage('Update K8s Manifest') {
             steps {
-                sh """
-                sed -i 's|image: .*$|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' k8s/deployment.yaml
-                """
+                sh '''
+                sed -i "s|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g" k8s/deployment.yaml
+                '''
             }
         }
 
@@ -55,14 +57,14 @@ pipeline {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: GIT_CREDENTIALS,
                         keyFileVariable: 'SSH_KEY')]) {
-                    sh """
+                    sh '''
                     git config user.email "jenkins@ci.com"
                     git config user.name "Jenkins"
                     git add k8s/deployment.yaml
-                    git commit -m "Update image to $IMAGE_TAG"
-                    GIT_SSH_COMMAND='ssh -i $SSH_KEY -o StrictHostKeyChecking=no' \
-                        git push origin $MANIFEST_BRANCH
-                    """
+                    git commit -m "Update image tag"
+                    GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
+                        git push origin main
+                    '''
                 }
             }
         }
