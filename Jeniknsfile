@@ -5,7 +5,7 @@ pipeline {
         REGISTRY = "gowshikm"
         IMAGE_NAME = "counter-app"
         GIT_CREDENTIALS = "git-creds"
-        DOCKER_CREDENTIALS = "docker-creds"
+        DOCKER_CREDENTIALS = "docker-hub-creds"
         MANIFEST_REPO = "https://github.com/GowshikM-2005/react-counter-deploy.git"
         MANIFEST_BRANCH = "main"
     }
