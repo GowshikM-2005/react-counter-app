@@ -52,21 +52,30 @@ pipeline {
 }
 
 
-        stage('Update K8s Manifest') {
-            steps {
-                sh '''
-                sed -i "s|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g" k8s/deployment.yaml
-                '''
-            }
+       stage('Update K8s Manifest') {
+    steps {
+        script {
+            sh """
+                echo "📥 Cloning deployment repo..."
+                git clone -b $MANIFEST_BRANCH $MANIFEST_REPO k8s
+                cd react-counter-deploy/k8s
+
+                echo "📝 Updating image tag in deployment.yaml..."
+                sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' k8s/deployment.yaml
+
+                echo "✅ Manifest updated successfully!"
+            """
         }
+    }
+}
 
         stage('Commit & Push Manifest') {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: GIT_CREDENTIALS,
                         keyFileVariable: 'SSH_KEY')]) {
                     sh '''
-                    git config user.email "jenkins@ci.com"
-                    git config user.name "Jenkins"
+                    git config user.email "gowshik0105@gmail.com"
+                    git config user.name "GowshikM-2005"
                     git add k8s/deployment.yaml
                     git commit -m "Update image tag"
                     GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
