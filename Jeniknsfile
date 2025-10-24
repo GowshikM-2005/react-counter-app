@@ -33,18 +33,24 @@ pipeline {
             }
         }
 
-        stage('Push to Registry') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS,
-                        usernameVariable: 'USER',
-                        passwordVariable: 'PASS')]) {
-                    sh '''
+   stage('Push to Registry') {
+    steps {
+        withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS,
+                usernameVariable: 'USER',
+                passwordVariable: 'PASS')]) {
+            script {
+                def IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+                sh """
+                    echo "🔐 Logging in to Docker Hub..."
                     echo $PASS | docker login -u $USER --password-stdin
-                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                    '''
-                }
+                    echo "🚀 Pushing image ${IMAGE}..."
+                    docker push ${IMAGE}
+                """
             }
         }
+    }
+}
+
 
         stage('Update K8s Manifest') {
             steps {
