@@ -51,6 +51,25 @@ pipeline {
     }
 }
 
+stage('AI Prediction') {
+            steps {
+                script {
+                    echo "🧠 Running AI Model for Build Analysis..."
+                    sh "python3 ai-engine/predict_failure.py"
+
+                    archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
+
+                    def output = readFile('ai-engine/results/predictions.json')
+                    def prediction = readJSON text: output
+
+                    echo "🔍 AI Predicted: ${prediction.predicted_status} (expected duration: ${prediction.predicted_duration})"
+
+                    if (prediction.predicted_status == "FAILURE") {
+                        error("🚨 AI predicted possible failure — stopping deployment.")
+                    }
+                }
+            }
+        }
 
        stage('Update K8s Manifest') {
     steps {
@@ -88,6 +107,20 @@ pipeline {
                         echo "📤 Pushing updated manifest..."
                         git push https://$USER:$PASS@github.com/GowshikM-2005/react-counter-deploy.git $MANIFEST_BRANCH
                     """
+                }
+            }
+        }
+
+         stage('Collect Metrics') {
+            steps {
+                script {
+                    def duration = currentBuild.durationString
+                    def status = currentBuild.currentResult
+
+                    sh """
+                        echo "$(date +%s),${duration},${status}" >> ai-engine/data/build_metrics.csv
+                    """
+                    archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
                 }
             }
         }
