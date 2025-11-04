@@ -112,18 +112,21 @@ stage('AI Prediction') {
         }
 
          stage('Collect Metrics') {
-            steps {
-                script {
-                    def duration = currentBuild.durationString
-                    def status = currentBuild.currentResult
+    steps {
+        script {
+            def duration = currentBuild.durationString
+            def status = currentBuild.currentResult
 
-                    sh """
-                        echo "$(date +%s),${duration},${status}" >> ai-engine/data/build_metrics.csv
-                    """
-                    archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
-                }
-            }
+            // Escape $ in bash commands using single quotes or backslash
+            sh '''
+                echo "$(date +%s),'"${duration}"','"${status}"'" >> ai-engine/data/build_metrics.csv
+            '''
+
+            archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
         }
+    }
+}
+
 
     }
 }
