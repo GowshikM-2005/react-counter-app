@@ -56,25 +56,26 @@ stage('AI Prediction') {
         script {
             echo "🧠 Running AI Model for Build Analysis..."
             sh '''
-                echo "📦 Installing Python dependencies..."
-                # Create a workspace-level virtual environment
-                python3 -m venv .venv || python3 -m ensurepip
+                echo "📦 Installing Python dependencies (user space)..."
                 
-                # Activate virtual environment
-                . .venv/bin/activate
+                # Upgrade pip for the current user
+                pip3 install --user --break-system-packages --upgrade pip
                 
-                # Upgrade pip and install required packages
-                pip install --break-system-packages --upgrade pip
-                pip install --break-system-packages joblib pandas numpy scikit-learn
+                # Install all required Python packages in user site-packages
+                pip3 install --user --break-system-packages joblib pandas numpy scikit-learn
                 
-                # Run the AI prediction script
+                # Add user site-packages to PATH so Python can find them
+                export PYTHONPATH=$PYTHONPATH:$(python3 -m site --user-site)
+                
+                # Verify installation
+                python3 -m pip show joblib || echo "⚠️ joblib not found, continuing..."
+                
+                # Run AI prediction script
                 python3 ai-engine/predict_failure.py
             '''
             
-            // Archive prediction result file
             archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
 
-            // Read the result and make decisions
             def output = readFile('ai-engine/results/predictions.json')
             def prediction = readJSON text: output
 
@@ -86,6 +87,7 @@ stage('AI Prediction') {
         }
     }
 }
+
 
 
        stage('Update K8s Manifest') {
