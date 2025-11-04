@@ -56,19 +56,16 @@ stage('Collect Metrics') {
     steps {
         script {
             echo "📊 Collecting build metrics..."
-            
+
             def timestamp = sh(script: "date +%s", returnStdout: true).trim()
             def duration = currentBuild.durationString ?: "0 sec"
             def status = currentBuild.currentResult ?: "UNKNOWN"
 
             sh """
                 mkdir -p ai-engine/data
-
-                # Add header only if file doesn't exist
                 if [ ! -f ai-engine/data/build_metrics.csv ]; then
                     echo "timestamp,duration,status" > ai-engine/data/build_metrics.csv
                 fi
-
                 echo "${timestamp},${duration},${status}" >> ai-engine/data/build_metrics.csv
             """
 
@@ -76,6 +73,7 @@ stage('Collect Metrics') {
         }
     }
 }
+
 
 
 stage('Train AI Model') {
