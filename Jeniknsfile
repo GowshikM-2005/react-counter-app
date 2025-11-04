@@ -55,7 +55,15 @@ stage('AI Prediction') {
             steps {
                 script {
                     echo "🧠 Running AI Model for Build Analysis..."
-                    sh "python3 ai-engine/predict_failure.py"
+
+                    // Ensure dependencies are installed before running prediction
+                    sh '''
+                        python3 -m venv venv
+                        . venv/bin/activate
+                        pip install --upgrade pip
+                        pip install -r ai-engine/requirements.txt
+                        python3 ai-engine/predict_failure.py
+                    '''
 
                     archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
 
