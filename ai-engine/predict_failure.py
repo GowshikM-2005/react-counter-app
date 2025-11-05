@@ -5,6 +5,49 @@ import os
 import pandas as pd
 from datetime import datetime
 
+def convert_duration_to_seconds(duration_str):
+    """Convert Jenkins duration string to seconds"""
+    try:
+        duration_str = str(duration_str).lower().strip()
+        
+        # Handle "and counting" format
+        if 'and counting' in duration_str:
+            # Extract just the time part: "1 min 29 sec"
+            time_part = duration_str.split(' and')[0]
+            duration_str = time_part
+        
+        # Handle different duration formats
+        if 'hr' in duration_str and 'min' in duration_str:
+            parts = duration_str.split()
+            hours = int(parts[0]) 
+            minutes = int(parts[2])
+            return hours * 3600 + minutes * 60
+            
+        elif 'min' in duration_str and 'sec' in duration_str:
+            # Format: "1 min 29 sec"
+            parts = duration_str.split()
+            minutes = int(parts[0])
+            seconds = int(parts[2])
+            return minutes * 60 + seconds
+            
+        elif 'min' in duration_str:
+            # Format: "1 min"
+            minutes = int(''.join(filter(str.isdigit, duration_str)))
+            return minutes * 60
+            
+        elif 'sec' in duration_str:
+            # Format: "29 sec"
+            seconds = int(''.join(filter(str.isdigit, duration_str)))
+            return seconds
+            
+        else:
+            # Try to parse as plain number
+            return float(duration_str)
+            
+    except Exception as e:
+        print(f"⚠️ Could not parse duration: {duration_str}, error: {e}")
+        return 60.0  # Default to 60 seconds
+
 def predict_build():
     print("🧠 Starting build prediction...")
     
@@ -56,6 +99,8 @@ def predict_build():
         
     except Exception as e:
         print(f"❌ Prediction error: {e}")
+        import traceback
+        traceback.print_exc()
         return create_default_prediction()
     
     # Save results
@@ -81,19 +126,6 @@ def create_default_prediction():
     
     print("📊 Using default prediction (model not trained)")
     return result
-
-def convert_duration_to_seconds(duration_str):
-    """Helper function to convert duration"""
-    try:
-        duration_str = str(duration_str).lower()
-        if 'min' in duration_str:
-            return float(''.join(filter(str.isdigit, duration_str))) * 60
-        elif 'sec' in duration_str:
-            return float(''.join(filter(str.isdigit, duration_str)))
-        else:
-            return float(duration_str)
-    except:
-        return 60.0
 
 if __name__ == "__main__":
     predict_build()
