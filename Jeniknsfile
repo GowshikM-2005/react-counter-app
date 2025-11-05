@@ -106,34 +106,34 @@ stage('AI Prediction') {
     steps {
         script {
             echo "🧠 Running AI Model for Build Analysis..."
+            
+            // Run the prediction script
             sh '''
-                echo "📦 Installing Python dependencies (user space)..."
-                
-                # Upgrade pip for the current user
-                pip3 install --user --break-system-packages --upgrade pip
-                
-                # Install all required Python packages in user site-packages
-                pip3 install --user --break-system-packages joblib pandas numpy scikit-learn
-                
-                # Add user site-packages to PATH so Python can find them
+                python3 -m pip install --user pandas scikit-learn joblib --break-system-packages
                 export PYTHONPATH=$PYTHONPATH:$(python3 -m site --user-site)
-                
-                # Verify installation
-                python3 -m pip show joblib || echo "⚠️ joblib not found, continuing..."
-                
-                # Run AI prediction script
                 python3 ai-engine/predict_failure.py
             '''
             
+            // Always archive the results, even if prediction fails
             archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
 
-            def output = readFile('ai-engine/results/predictions.json')
-            def prediction = readJSON text: output
-
-            echo "🔍 AI Predicted: ${prediction.predicted_status} (expected duration: ${prediction.predicted_duration})"
-
-            if (prediction.predicted_status == "FAILURE") {
-                error("🚨 AI predicted possible failure — stopping deployment.")
+            // Read and process prediction
+            def prediction = readJSON file: 'ai-engine/results/predictions.json'
+            
+            echo "🔍 AI Analysis Results:"
+            echo "   - Predicted Status: ${prediction.predicted_status}"
+            echo "   - Confidence: ${prediction.confidence}"
+            echo "   - Model Used: ${prediction.model_used}"
+            
+            // Only fail if model was actually used AND predicts failure
+            if (prediction.model_used && prediction.predicted_status == "FAILURE") {
+                if (prediction.confidence > 0.7) { // Only if high confidence
+                    error("🚨 AI predicted possible failure with ${prediction.confidence*100}% confidence — stopping deployment.")
+                } else {
+                    echo "⚠️ AI shows potential risk but confidence is low. Continuing with caution..."
+                }
+            } else if (!prediction.model_used) {
+                echo "📊 AI model not yet trained. Collecting more build data..."
             }
         }
     }
