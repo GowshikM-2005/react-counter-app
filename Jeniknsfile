@@ -162,7 +162,26 @@ stage('AI Prediction') {
     }
 }
 
-
+stage('Debug Metrics') {
+    steps {
+        script {
+            echo "🔍 Checking collected metrics data..."
+            sh '''
+                echo "=== Current Build Metrics ==="
+                if [ -f "ai-engine/data/build_metrics.csv" ]; then
+                    echo "📊 File content:"
+                    cat ai-engine/data/build_metrics.csv
+                    echo "=== Line count ==="
+                    wc -l ai-engine/data/build_metrics.csv
+                    echo "=== First few entries ==="
+                    head -n 5 ai-engine/data/build_metrics.csv
+                else
+                    echo "❌ No metrics file found"
+                fi
+            '''
+        }
+    }
+}
 
        stage('Update K8s Manifest') {
     steps {
