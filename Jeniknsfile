@@ -114,25 +114,48 @@ stage('AI Prediction') {
                 python3 ai-engine/predict_failure.py
             '''
             
-            // Always archive the results, even if prediction fails
+            // Always archive the results
             archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
 
-            // Read and process prediction
-            def prediction = readJSON file: 'ai-engine/results/predictions.json'
+            // FIX: Read and parse JSON file manually without readJSON
+            def predictionFile = readFile(file: 'ai-engine/results/predictions.json').trim()
+            
+            // Parse JSON manually using Groovy
+            def predictedStatus = "SUCCESS"
+            def confidence = 0.5
+            def modelUsed = false
+            
+            // Simple JSON parsing
+            if (predictionFile.contains('"predicted_status": "FAILURE"')) {
+                predictedStatus = "FAILURE"
+            }
+            
+            // Extract confidence if available
+            if (predictionFile.contains('"confidence":')) {
+                def confidenceMatch = (predictionFile =~ /"confidence":\s*([0-9.]+)/)
+                if (confidenceMatch) {
+                    confidence = confidenceMatch[0][1].toDouble()
+                }
+            }
+            
+            // Check if model was used
+            if (predictionFile.contains('"model_used": true')) {
+                modelUsed = true
+            }
             
             echo "🔍 AI Analysis Results:"
-            echo "   - Predicted Status: ${prediction.predicted_status}"
-            echo "   - Confidence: ${prediction.confidence}"
-            echo "   - Model Used: ${prediction.model_used}"
+            echo "   - Predicted Status: ${predictedStatus}"
+            echo "   - Confidence: ${confidence}"
+            echo "   - Model Used: ${modelUsed}"
             
-            // Only fail if model was actually used AND predicts failure
-            if (prediction.model_used && prediction.predicted_status == "FAILURE") {
-                if (prediction.confidence > 0.7) { // Only if high confidence
-                    error("🚨 AI predicted possible failure with ${prediction.confidence*100}% confidence — stopping deployment.")
+            // Only fail if model was actually used AND predicts failure with high confidence
+            if (modelUsed && predictedStatus == "FAILURE") {
+                if (confidence > 0.7) {
+                    error("🚨 AI predicted possible failure with ${confidence * 100}% confidence — stopping deployment.")
                 } else {
                     echo "⚠️ AI shows potential risk but confidence is low. Continuing with caution..."
                 }
-            } else if (!prediction.model_used) {
+            } else if (!modelUsed) {
                 echo "📊 AI model not yet trained. Collecting more build data..."
             }
         }
