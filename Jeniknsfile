@@ -162,21 +162,27 @@ stage('AI Prediction') {
     }
 }
 
-stage('Debug Metrics') {
+
+stage('Debug AI Training') {
     steps {
         script {
-            echo "🔍 Checking collected metrics data..."
+            echo "🔍 Debugging AI Training Process..."
             sh '''
-                echo "=== Current Build Metrics ==="
-                if [ -f "ai-engine/data/build_metrics.csv" ]; then
-                    echo "📊 File content:"
-                    cat ai-engine/data/build_metrics.csv
-                    echo "=== Line count ==="
-                    wc -l ai-engine/data/build_metrics.csv
-                    echo "=== First few entries ==="
-                    head -n 5 ai-engine/data/build_metrics.csv
+                echo "=== AI Engine Structure ==="
+                find ai-engine -type f -name "*.py" -o -name "*.csv" -o -name "*.pkl" -o -name "*.json" | sort
+                
+                echo "=== Model Directory ==="
+                ls -la ai-engine/model/ 2>/dev/null || echo "No model directory yet"
+                
+                echo "=== Training Script Output ==="
+                python3 ai-engine/train_model.py
+                
+                echo "=== Check if Model Was Created ==="
+                if [ -f "ai-engine/model/build_predictor.pkl" ]; then
+                    echo "✅ MODEL CREATED SUCCESSFULLY!"
+                    ls -la ai-engine/model/build_predictor.pkl
                 else
-                    echo "❌ No metrics file found"
+                    echo "❌ Model file was not created"
                 fi
             '''
         }
