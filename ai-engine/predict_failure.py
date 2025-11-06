@@ -11,13 +11,10 @@ def convert_duration_to_seconds(duration_str):
     try:
         duration_str = str(duration_str).lower().strip()
         
-        # Handle "and counting" format
         if 'and counting' in duration_str:
-            # Extract just the time part: "1 min 29 sec"
             time_part = duration_str.split(' and')[0]
             duration_str = time_part
         
-        # Handle different duration formats
         if 'hr' in duration_str and 'min' in duration_str:
             parts = duration_str.split()
             hours = int(parts[0]) 
@@ -25,37 +22,33 @@ def convert_duration_to_seconds(duration_str):
             return hours * 3600 + minutes * 60
             
         elif 'min' in duration_str and 'sec' in duration_str:
-            # Format: "1 min 29 sec"
             parts = duration_str.split()
             minutes = int(parts[0])
             seconds = int(parts[2])
             return minutes * 60 + seconds
             
         elif 'min' in duration_str:
-            # Format: "1 min"
             minutes = int(''.join(filter(str.isdigit, duration_str)))
             return minutes * 60
             
         elif 'sec' in duration_str:
-            # Format: "29 sec"
             seconds = int(''.join(filter(str.isdigit, duration_str)))
             return seconds
             
         else:
-            # Try to parse as plain number
             return float(duration_str)
             
     except Exception as e:
         print(f"⚠️ Could not parse duration: {duration_str}, error: {e}")
-        return 60.0  # Default to 60 seconds
+        return 60.0
 
 def get_build_count_manual(csv_file):
-    """Manually count builds to avoid pandas issues"""
+    """Manually count builds"""
     try:
         with open(csv_file, 'r') as f:
             reader = csv.reader(f)
             rows = list(reader)
-            return len(rows) - 1 if len(rows) > 0 else 0
+            return len(rows) - 1 if len(rows) > 1 else 0
     except:
         return 0
 
@@ -63,9 +56,8 @@ def predict_build():
     print("🧠 Starting build prediction...")
     
     model_path = 'ai-engine/model/build_predictor.pkl'
-    csv_file = 'ai-engine/data/build_metrics.csv'
     
-    # Check if model exists and is valid
+    # Check if model exists
     if not os.path.exists(model_path):
         print("❌ No trained model found.")
         return create_default_prediction()
@@ -75,10 +67,11 @@ def predict_build():
         model = joblib.load(model_path)
         print("✅ Loaded trained model")
         
-        # Get build count manually
+        # Get build count for info
+        csv_file = 'ai-engine/data/build_metrics.csv'
         build_count = get_build_count_manual(csv_file)
         
-        # Use average duration (default to 60 seconds)
+        # Use average duration (we'll improve this later)
         avg_duration = 60
         
         # Create features for current build
@@ -104,8 +97,6 @@ def predict_build():
         
     except Exception as e:
         print(f"❌ Prediction error: {e}")
-        import traceback
-        traceback.print_exc()
         return create_default_prediction()
     
     # Save results
