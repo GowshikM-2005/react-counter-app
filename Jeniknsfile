@@ -52,7 +52,7 @@ pipeline {
 }
 
 
-   stage('Collect Metrics') {
+ stage('Collect Metrics') {
     steps {
         script {
             echo "📊 Collecting build metrics..."
@@ -62,20 +62,24 @@ pipeline {
             def duration = currentBuild.durationString ?: "0 sec"
             def status = currentBuild.currentResult ?: "UNKNOWN"
             
-            // Create data directory and append metrics with proper formatting
+            // Clean up duration format
+            def cleanDuration = duration.replace(' and counting', '')
+            
+            // Create data directory and append metrics
             sh """
                 mkdir -p ai-engine/data
                 if [ ! -f ai-engine/data/build_metrics.csv ]; then
                     echo "timestamp,duration,status" > ai-engine/data/build_metrics.csv
                 fi
-                # Ensure proper CSV formatting - no extra spaces or special characters
-                echo "${timestamp},${duration},${status}" | sed 's/ and counting//g' >> ai-engine/data/build_metrics.csv
+                echo "${timestamp},${cleanDuration},${status}" >> ai-engine/data/build_metrics.csv
             """
             
             // Debug: Show what we collected
             sh """
-                echo "=== Current Metrics ==="
+                echo "=== Current Metrics File ==="
                 cat ai-engine/data/build_metrics.csv
+                echo "=== Line Count ==="
+                wc -l ai-engine/data/build_metrics.csv
             """
             
             archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
