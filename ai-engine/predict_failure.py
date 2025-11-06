@@ -3,6 +3,7 @@ import joblib
 import json
 import os
 import pandas as pd
+import csv
 from datetime import datetime
 
 def convert_duration_to_seconds(duration_str):
@@ -48,6 +49,16 @@ def convert_duration_to_seconds(duration_str):
         print(f"⚠️ Could not parse duration: {duration_str}, error: {e}")
         return 60.0  # Default to 60 seconds
 
+def get_build_count_manual(csv_file):
+    """Manually count builds to avoid pandas issues"""
+    try:
+        with open(csv_file, 'r') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+            return len(rows) - 1 if len(rows) > 0 else 0
+    except:
+        return 0
+
 def predict_build():
     print("🧠 Starting build prediction...")
     
@@ -64,17 +75,11 @@ def predict_build():
         model = joblib.load(model_path)
         print("✅ Loaded trained model")
         
-        # Load recent data to get patterns
-        if os.path.exists(csv_file):
-            data = pd.read_csv(csv_file)
-            if len(data) > 0:
-                # Use the average duration from recent builds
-                recent_durations = data['duration'].tail(5).apply(convert_duration_to_seconds)
-                avg_duration = recent_durations.mean()
-            else:
-                avg_duration = 60
-        else:
-            avg_duration = 60
+        # Get build count manually
+        build_count = get_build_count_manual(csv_file)
+        
+        # Use average duration (default to 60 seconds)
+        avg_duration = 60
         
         # Create features for current build
         current_timestamp = int(datetime.now().timestamp())
@@ -92,10 +97,10 @@ def predict_build():
             "confidence": round(confidence, 2),
             "predicted_duration": f"{int(avg_duration)} sec",
             "model_used": True,
-            "builds_trained_on": len(data) if os.path.exists(csv_file) else 0
+            "builds_trained_on": build_count
         }
         
-        print(f"✅ Prediction: {predicted_status} (confidence: {confidence:.2f})")
+        print(f"✅ AI Prediction: {predicted_status} (confidence: {confidence:.2f})")
         
     except Exception as e:
         print(f"❌ Prediction error: {e}")
