@@ -4,7 +4,6 @@ import os
 import sys
 import csv
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 import joblib
 
 def convert_duration_to_seconds(duration_str):
@@ -15,7 +14,6 @@ def convert_duration_to_seconds(duration_str):
         
         # Handle "and counting" format
         if 'and counting' in duration_str:
-            # Extract just the time part: "1 min 29 sec"
             time_part = duration_str.split(' and')[0]
             duration_str = time_part
         
@@ -27,119 +25,122 @@ def convert_duration_to_seconds(duration_str):
             return hours * 3600 + minutes * 60
             
         elif 'min' in duration_str and 'sec' in duration_str:
-            # Format: "1 min 29 sec"
             parts = duration_str.split()
             minutes = int(parts[0])
             seconds = int(parts[2])
             return minutes * 60 + seconds
             
         elif 'min' in duration_str:
-            # Format: "1 min"
             minutes = int(''.join(filter(str.isdigit, duration_str)))
             return minutes * 60
             
         elif 'sec' in duration_str:
-            # Format: "29 sec"
             seconds = int(''.join(filter(str.isdigit, duration_str)))
             return seconds
             
         else:
-            # Try to parse as plain number
             return float(duration_str)
             
     except Exception as e:
         print(f"⚠️ Could not parse duration: {duration_str}, error: {e}")
-        return 60.0  # Default to 60 seconds
+        return 60.0
 
-def count_builds_manual(csv_file):
-    """Manually count builds in CSV to avoid pandas issues"""
+def read_metrics_manual(csv_file):
+    """Manually read and parse the CSV file to avoid pandas issues"""
+    builds = []
     try:
         with open(csv_file, 'r') as f:
             reader = csv.reader(f)
-            rows = list(reader)
-            # Count non-header rows
-            build_count = len(rows) - 1 if len(rows) > 0 else 0
-            print(f"📊 Manual count: {build_count} builds (from {len(rows)} total rows)")
-            return build_count, rows
+            lines = list(reader)
+            
+            if len(lines) < 2:
+                print("❌ Not enough data in CSV file")
+                return []
+            
+            # Extract header and data rows
+            header = lines[0]
+            data_rows = lines[1:]
+            
+            print(f"📊 CSV Header: {header}")
+            print(f"📊 Data rows: {len(data_rows)}")
+            
+            for i, row in enumerate(data_rows):
+                if len(row) >= 3:
+                    build_data = {
+                        'timestamp': row[0],
+                        'duration': row[1], 
+                        'status': row[2]
+                    }
+                    builds.append(build_data)
+                    print(f"  Build {i+1}: {build_data}")
+                else:
+                    print(f"⚠️ Skipping invalid row {i+1}: {row}")
+        
+        return builds
+        
     except Exception as e:
-        print(f"❌ Error reading CSV manually: {e}")
-        return 0, []
+        print(f"❌ Error reading CSV: {e}")
+        return []
 
 def train_model():
     print("🤖 Starting AI model training...")
     
-    # Check if we have enough data
     csv_file = 'ai-engine/data/build_metrics.csv'
     
     if not os.path.exists(csv_file):
         print("❌ No metrics data file found.")
         return False
     
+    # Read data manually to avoid pandas issues
+    builds = read_metrics_manual(csv_file)
+    
+    if len(builds) < 1:
+        print(f"⚠️ Insufficient data: {len(builds)} builds. Need at least 1.")
+        return False
+    
+    print(f"✅ Found {len(builds)} builds! Processing...")
+    
     try:
-        # First, manually count the builds to avoid pandas issues
-        build_count, csv_rows = count_builds_manual(csv_file)
-        
-        if build_count < 1:
-            print(f"⚠️ Insufficient data: {build_count} builds. Need at least 1.")
-            return False
-        
-        print(f"✅ Found {build_count} builds! Processing...")
-        
-        # Try to read with pandas, but if it fails, create DataFrame manually
-        try:
-            data = pd.read_csv(csv_file)
-            print(f"📈 Pandas successfully read {len(data)} rows")
-        except Exception as e:
-            print(f"⚠️ Pandas read failed, creating manual DataFrame: {e}")
-            # Create DataFrame manually from CSV rows
-            if len(csv_rows) > 1:
-                headers = csv_rows[0]
-                data_rows = csv_rows[1:]
-                data = pd.DataFrame(data_rows, columns=headers)
-                print(f"📈 Manual DataFrame created with {len(data)} rows")
-            else:
-                print("❌ Not enough rows to create DataFrame")
-                return False
-        
-        # Ensure we have the expected columns
+        # Convert to DataFrame
+        data = pd.DataFrame(builds)
+        print(f"📈 Created DataFrame with {len(data)} rows")
         print(f"🔍 DataFrame columns: {list(data.columns)}")
-        print(f"🔍 DataFrame content:\n{data}")
         
         # Convert duration to seconds
         data['duration_seconds'] = data['duration'].apply(convert_duration_to_seconds)
         
-        # Convert timestamp to numerical feature
+        # Convert timestamp to numerical
         data['timestamp_numeric'] = pd.to_numeric(data['timestamp'], errors='coerce')
         
         # Convert status to numerical (1 for SUCCESS, 0 for FAILURE)
         data['status_numeric'] = data['status'].apply(lambda x: 1 if str(x).strip() == 'SUCCESS' else 0)
         
-        # Remove any rows with invalid data
+        # Remove invalid rows
         data_clean = data.dropna()
         
-        print(f"📈 Cleaned data: {len(data_clean)} valid records")
+        print(f"📊 Cleaned data: {len(data_clean)} valid records")
         
         if len(data_clean) < 1:
-            print(f"⚠️ No valid data after cleaning")
+            print("❌ No valid data after cleaning")
             return False
         
         # Prepare features and target
         X = data_clean[['timestamp_numeric', 'duration_seconds']]
         y = data_clean['status_numeric']
         
-        print(f"🎯 Features shape: {X.shape}")
-        print(f"🎯 Target shape: {y.shape}")
+        print(f"🎯 Training on {len(X)} samples")
         
-        # Train model with all available data
+        # Train model - use all data for training when we have few samples
         model = RandomForestClassifier(n_estimators=50, random_state=42)
         model.fit(X, y)
         
-        # For single build, we can't calculate accuracy but we can still train
-        if len(X) > 1:
-            accuracy = model.score(X, y)  # This is training accuracy, not ideal but works
-            print(f"✅ Model trained! Accuracy: {accuracy:.2f}")
+        # For single build, we can't calculate proper accuracy
+        if len(X) == 1:
+            print("✅ Model trained with single build! (Will improve with more data)")
+            accuracy = 1.0  # Perfect on training data
         else:
-            print(f"✅ Model trained with single build! (Will improve with more data)")
+            accuracy = model.score(X, y)  # Training accuracy
+            print(f"✅ Model trained! Accuracy: {accuracy:.2f}")
         
         # Save model
         os.makedirs('ai-engine/model', exist_ok=True)
@@ -147,7 +148,7 @@ def train_model():
         joblib.dump(model, model_path)
         
         print(f"💾 Model saved to: {model_path}")
-        print(f"🎉 AI is now active! Will make predictions on future builds.")
+        print("🎉 AI is now active! Will make real predictions.")
         return True
         
     except Exception as e:
