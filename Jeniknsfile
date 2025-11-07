@@ -11,11 +11,32 @@ pipeline {
         IMAGE_TAG = "v${env.BUILD_NUMBER}"
     }
 
-    triggers {
-        pollSCM('* * * * *')  // OR use Git webhook
-    }
-
     stages {
+        stage('Restore AI Data') {
+            steps {
+                script {
+                    echo "📥 Restoring AI data from previous builds..."
+                    sh '''
+                        mkdir -p ai-engine/data
+                        mkdir -p ai-engine/model
+                        mkdir -p ai-engine/results
+                    '''
+                    // Try to copy from last successful build
+                    try {
+                        copyArtifacts filter: 'ai-engine/data/build_metrics.csv', projectName: env.JOB_NAME, selector: lastSuccessful()
+                        echo "✅ Restored metrics from last successful build"
+                    } catch (Exception e) {
+                        echo "⚠️ No previous metrics found (first build)"
+                    }
+                    try {
+                        copyArtifacts filter: 'ai-engine/model/build_predictor.pkl', projectName: env.JOB_NAME, selector: lastSuccessful()
+                        echo "✅ Restored AI model from last successful build"
+                    } catch (Exception e) {
+                        echo "⚠️ No previous model found (first build or model not trained)"
+                    }
+                }
+            }
+        }
 
         stage('Checkout') {
             steps {
@@ -27,200 +48,175 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    
                     sh "docker build -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ."
                 }
             }
         }
 
-   stage('Push to Registry') {
-    steps {
-        withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS,
-                usernameVariable: 'USER',
-                passwordVariable: 'PASS')]) {
-            script {
-                def IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-                sh """
-                    echo "🔐 Logging in to Docker Hub..."
-                    echo $PASS | docker login -u $USER --password-stdin
-                    echo "🚀 Pushing image ${IMAGE}..."
-                    docker push ${IMAGE}
-                """
-            }
-        }
-    }
-}
-
-
- stage('Collect Metrics') {
-    steps {
-        script {
-            echo "📊 Collecting build metrics..."
-            
-            // Get build information
-            def timestamp = sh(script: "date +%s", returnStdout: true).trim()
-            def duration = currentBuild.durationString ?: "0 sec"
-            def status = currentBuild.currentResult ?: "UNKNOWN"
-            
-            // Clean up duration format
-            def cleanDuration = duration.replace(' and counting', '')
-            
-            // Create data directory and append metrics
-            sh """
-                mkdir -p ai-engine/data
-                if [ ! -f ai-engine/data/build_metrics.csv ]; then
-                    echo "timestamp,duration,status" > ai-engine/data/build_metrics.csv
-                fi
-                echo "${timestamp},${cleanDuration},${status}" >> ai-engine/data/build_metrics.csv
-            """
-            
-            // Debug: Show what we collected
-            sh """
-                echo "=== Current Metrics File ==="
-                cat ai-engine/data/build_metrics.csv
-                echo "=== Line Count ==="
-                wc -l ai-engine/data/build_metrics.csv
-            """
-            
-            archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
-        }
-    }
-}
-
-    stage('Train AI Model') {
-        steps {
-            script {
-                echo "🤖 Training AI model based on build metrics..."
-
-                // Ensure dependencies are available
-                sh """
-                    python3 -m pip install --user --upgrade pip --break-system-packages || true
-                    python3 -m pip install --user pandas scikit-learn joblib --break-system-packages
-                """
-
-                // Train AI model
-                sh 'python3 ai-engine/train_model.py || echo "⚠️ AI Training skipped due to insufficient data"'
-            }
-        }
-        post {
-            success {
-                echo "✅ AI model training completed successfully!"
-            }
-            failure {
-                echo "⚠️ AI training encountered an error (check logs)."
-            }
-        }
-    }
-
-
-stage('AI Prediction') {
-    steps {
-        script {
-            echo "🧠 Running AI Model for Build Analysis..."
-            
-            // Run the prediction script
-            sh '''
-                python3 -m pip install --user pandas scikit-learn joblib --break-system-packages
-                export PYTHONPATH=$PYTHONPATH:$(python3 -m site --user-site)
-                python3 ai-engine/predict_failure.py
-            '''
-            
-            // Always archive the results
-            archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
-
-            // FIX: Read and parse JSON file manually without readJSON
-            def predictionFile = readFile(file: 'ai-engine/results/predictions.json').trim()
-            
-            // Parse JSON manually using Groovy
-            def predictedStatus = "SUCCESS"
-            def confidence = 0.5
-            def modelUsed = false
-            
-            // Simple JSON parsing
-            if (predictionFile.contains('"predicted_status": "FAILURE"')) {
-                predictedStatus = "FAILURE"
-            }
-            
-            // Extract confidence if available
-            if (predictionFile.contains('"confidence":')) {
-                def confidenceMatch = (predictionFile =~ /"confidence":\s*([0-9.]+)/)
-                if (confidenceMatch) {
-                    confidence = confidenceMatch[0][1].toDouble()
+        stage('Push to Registry') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS,
+                        usernameVariable: 'USER',
+                        passwordVariable: 'PASS')]) {
+                    script {
+                        def IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+                        sh """
+                            echo "🔐 Logging in to Docker Hub..."
+                            echo \$PASS | docker login -u \$USER --password-stdin
+                            echo "🚀 Pushing image ${IMAGE}..."
+                            docker push ${IMAGE}
+                        """
+                    }
                 }
             }
-            
-            // Check if model was used
-            if (predictionFile.contains('"model_used": true')) {
-                modelUsed = true
-            }
-            
-            echo "🔍 AI Analysis Results:"
-            echo "   - Predicted Status: ${predictedStatus}"
-            echo "   - Confidence: ${confidence}"
-            echo "   - Model Used: ${modelUsed}"
-            
-            // Only fail if model was actually used AND predicts failure with high confidence
-            if (modelUsed && predictedStatus == "FAILURE") {
-                if (confidence > 0.7) {
-                    error("🚨 AI predicted possible failure with ${confidence * 100}% confidence — stopping deployment.")
-                } else {
-                    echo "⚠️ AI shows potential risk but confidence is low. Continuing with caution..."
+        }
+
+        stage('Collect Metrics') {
+            steps {
+                script {
+                    echo "📊 Collecting build metrics..."
+                    
+                    def timestamp = sh(script: "date +%s", returnStdout: true).trim()
+                    def duration = currentBuild.durationString ?: "0 sec"
+                    def status = currentBuild.currentResult ?: "UNKNOWN"
+                    
+                    def cleanDuration = duration.replace(' and counting', '')
+                    
+                    sh """
+                        mkdir -p ai-engine/data
+                        if [ ! -f ai-engine/data/build_metrics.csv ]; then
+                            echo "timestamp,duration,status" > ai-engine/data/build_metrics.csv
+                        fi
+                        echo "${timestamp},${cleanDuration},${status}" >> ai-engine/data/build_metrics.csv
+                        
+                        echo "=== Current Metrics ==="
+                        cat ai-engine/data/build_metrics.csv
+                        echo "=== Total builds recorded ==="
+                        tail -n +2 ai-engine/data/build_metrics.csv | wc -l
+                    """
+                    
+                    archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
                 }
-            } else if (!modelUsed) {
-                echo "📊 AI model not yet trained. Collecting more build data..."
             }
         }
-    }
-}
 
+        stage('Train AI Model') {
+            steps {
+                script {
+                    echo "🤖 Training AI model based on build metrics..."
 
-stage('Debug AI Training') {
-    steps {
-        script {
-            echo "🔍 Debugging AI Training Process..."
-            sh '''
-                echo "=== AI Engine Structure ==="
-                find ai-engine -type f -name "*.py" -o -name "*.csv" -o -name "*.pkl" -o -name "*.json" | sort
-                
-                echo "=== Model Directory ==="
-                ls -la ai-engine/model/ 2>/dev/null || echo "No model directory yet"
-                
-                echo "=== Training Script Output ==="
-                python3 ai-engine/train_model.py
-                
-                echo "=== Check if Model Was Created ==="
-                if [ -f "ai-engine/model/build_predictor.pkl" ]; then
-                    echo "✅ MODEL CREATED SUCCESSFULLY!"
-                    ls -la ai-engine/model/build_predictor.pkl
-                else
-                    echo "❌ Model file was not created"
-                fi
-            '''
+                    sh """
+                        python3 -m pip install --user pandas scikit-learn joblib --break-system-packages
+                    """
+
+                    sh '''
+                        echo "=== Training AI Model ==="
+                        python3 ai-engine/train_model.py
+                        
+                        if [ -f "ai-engine/model/build_predictor.pkl" ]; then
+                            echo "✅ AI model trained successfully!"
+                            echo "=== Model Info ==="
+                            python3 -c "
+import joblib
+import os
+model_path = 'ai-engine/model/build_predictor.pkl'
+if os.path.exists(model_path):
+    model = joblib.load(model_path)
+    print(f'Model trained on: {model.n_features_in_} features')
+    print(f'Model classes: {model.classes_}')
+else:
+    print('No model file found')
+                            "
+                        else
+                            echo "⚠️ Model not created (check logs above)"
+                        fi
+                    '''
+                }
+            }
         }
-    }
-}
 
-       stage('Update K8s Manifest') {
-    steps {
-        script {
-            sh """
-                echo "🧹 Cleaning old manifest folder..."
-                rm -rf react-counter-deploy
+        stage('AI Prediction') {
+            steps {
+                script {
+                    echo "🧠 Running AI Model for Build Analysis..."
+                    
+                    sh '''
+                        python3 -m pip install --user pandas scikit-learn joblib --break-system-packages
+                        export PYTHONPATH=\$PYTHONPATH:\$(python3 -m site --user-site)
+                        python3 ai-engine/predict_failure.py
+                    '''
+                    
+                    archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
 
-                echo "📥 Cloning deployment repo..."
-                git clone -b $MANIFEST_BRANCH $MANIFEST_REPO react-counter-deploy
-
-                echo "📝 Updating image tag inside k8s/deploy.yml..."
-                sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' react-counter-deploy/k8s/deployment.yml
-
-                echo "✅ Manifest updated to $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
-            """
+                    def predictionFile = readFile(file: 'ai-engine/results/predictions.json').trim()
+                    
+                    def predictedStatus = "SUCCESS"
+                    def confidence = 0.5
+                    def modelUsed = false
+                    def buildsTrained = 0
+                    
+                    if (predictionFile.contains('"predicted_status": "FAILURE"')) {
+                        predictedStatus = "FAILURE"
+                    }
+                    
+                    if (predictionFile.contains('"confidence":')) {
+                        def confidenceMatch = (predictionFile =~ /"confidence":\\s*([0-9.]+)/)
+                        if (confidenceMatch) {
+                            confidence = confidenceMatch[0][1].toDouble()
+                        }
+                    }
+                    
+                    if (predictionFile.contains('"model_used": true')) {
+                        modelUsed = true
+                    }
+                    
+                    if (predictionFile.contains('"builds_trained_on":')) {
+                        def buildsMatch = (predictionFile =~ /"builds_trained_on":\\s*([0-9]+)/)
+                        if (buildsMatch) {
+                            buildsTrained = buildsMatch[0][1].toInteger()
+                        }
+                    }
+                    
+                    echo "🔍 AI Analysis Results:"
+                    echo "   - Predicted Status: ${predictedStatus}"
+                    echo "   - Confidence: ${confidence}"
+                    echo "   - Model Used: ${modelUsed}"
+                    echo "   - Builds Trained On: ${buildsTrained}"
+                    
+                    if (modelUsed && predictedStatus == "FAILURE") {
+                        if (confidence > 0.7) {
+                            error("🚨 AI predicted possible failure with ${confidence * 100}% confidence — stopping deployment.")
+                        } else {
+                            echo "⚠️ AI shows potential risk but confidence is low. Continuing with caution..."
+                        }
+                    } else if (!modelUsed) {
+                        echo "📊 AI model not yet trained. Collecting more build data..."
+                    }
+                }
+            }
         }
-    }
-}
 
+        // Your existing K8s stages here...
+        stage('Update K8s Manifest') {
+            steps {
+                script {
+                    sh """
+                        echo "🧹 Cleaning old manifest folder..."
+                        rm -rf react-counter-deploy
 
-            stage('Commit & Push Manifest') {
+                        echo "📥 Cloning deployment repo..."
+                        git clone -b \$MANIFEST_BRANCH \$MANIFEST_REPO react-counter-deploy
+
+                        echo "📝 Updating image tag inside k8s/deploy.yml..."
+                        sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' react-counter-deploy/k8s/deployment.yml
+
+                        echo "✅ Manifest updated to $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+                    """
+                }
+            }
+        }
+
+        stage('Commit & Push Manifest') {
             steps {
                 withCredentials([usernamePassword(credentialsId: GIT_CREDENTIALS,
                         usernameVariable: 'USER',
@@ -234,14 +230,18 @@ stage('Debug AI Training') {
                         git commit -m "🚀 Update image tag to $IMAGE_TAG [CI Build #$BUILD_NUMBER]" || echo "No changes to commit."
 
                         echo "📤 Pushing updated manifest..."
-                        git push https://$USER:$PASS@github.com/GowshikM-2005/react-counter-deploy.git $MANIFEST_BRANCH
+                        git push https://\$USER:\$PASS@github.com/GowshikM-2005/react-counter-deploy.git \$MANIFEST_BRANCH
                     """
                 }
             }
         }
-
-       
-
-
+    }
+    
+    post {
+        always {
+            echo "💾 Archiving AI data for next build..."
+            archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
+            archiveArtifacts artifacts: 'ai-engine/model/*.pkl', fingerprint: true, allowEmptyArchive: true
+        }
     }
 }
