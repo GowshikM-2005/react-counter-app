@@ -12,46 +12,81 @@ pipeline {
     }
 
     triggers {
-        pollSCM('* * * * *')  // OR use Git webhook
+        pollSCM('* * * * *')
     }
 
     stages {
-        stage('Restore AI Data') {
+        stage('Initialize') {
             steps {
                 script {
-                    echo "📥 Restoring AI data from previous builds..."
+                    echo "🚀 Starting Pipeline Build #${BUILD_NUMBER}"
+                    // Create directory structure
                     sh '''
                         mkdir -p ai-engine/data
                         mkdir -p ai-engine/model
                         mkdir -p ai-engine/results
                     '''
+                }
+            }
+        }
+
+        stage('Restore AI Data') {
+            steps {
+                script {
+                    echo "📥 Restoring AI data from previous builds..."
                     
-                    // Try to restore metrics from last successful build
+                    // Method 1: Try copyArtifacts with error handling
                     try {
-                        copyArtifacts filter: 'ai-engine/data/build_metrics.csv', projectName: env.JOB_NAME, selector: lastSuccessful()
-                        echo "✅ Restored metrics from last successful build"
+                        // Check if there are any previous successful builds
+                        def lastSuccess = currentBuild.getPreviousSuccessfulBuild()
+                        if (lastSuccess) {
+                            echo "✅ Found previous successful build #${lastSuccess.number}"
+                            copyArtifacts(
+                                projectName: env.JOB_NAME,
+                                selector: specific(lastSuccess.number),
+                                filter: 'ai-engine/data/build_metrics.csv',
+                                fingerprintArtifacts: true,
+                                target: 'ai-engine/data/',
+                                flatten: true
+                            )
+                            echo "✅ Restored metrics from build #${lastSuccess.number}"
+                        } else {
+                            echo "⚠️ No previous successful builds found (first build?)"
+                        }
                     } catch (Exception e) {
-                        echo "⚠️ No previous metrics found (first build or cleaned workspace)"
+                        echo "⚠️ Could not restore metrics: ${e.getMessage()}"
                     }
                     
-                    // Try to restore model from last successful build
+                    // Method 2: Try to restore model
                     try {
-                        copyArtifacts filter: 'ai-engine/model/build_predictor.pkl', projectName: env.JOB_NAME, selector: lastSuccessful()
-                        echo "✅ Restored AI model from last successful build"
+                        def lastSuccess = currentBuild.getPreviousSuccessfulBuild()
+                        if (lastSuccess) {
+                            copyArtifacts(
+                                projectName: env.JOB_NAME,
+                                selector: specific(lastSuccess.number),
+                                filter: 'ai-engine/model/build_predictor.pkl',
+                                fingerprintArtifacts: true,
+                                target: 'ai-engine/model/',
+                                flatten: true
+                            )
+                            echo "✅ Restored AI model from build #${lastSuccess.number}"
+                        }
                     } catch (Exception e) {
-                        echo "⚠️ No previous model found (first build or model not trained)"
+                        echo "⚠️ Could not restore model: ${e.getMessage()}"
                     }
                     
-                    // Debug: Show what we have after restoration
+                    // Debug what we have after restoration
                     sh '''
-                        echo "=== Files after restoration ==="
-                        find ai-engine -type f -name "*.csv" -o -name "*.pkl" | sort || true
+                        echo "=== Current AI Data ==="
+                        find ai-engine -type f -name "*.csv" -o -name "*.pkl" -o -name "*.json" 2>/dev/null | sort || echo "No files found"
                         
                         if [ -f "ai-engine/data/build_metrics.csv" ]; then
-                            echo "=== Current Metrics ==="
+                            echo "=== Metrics Content ==="
                             cat ai-engine/data/build_metrics.csv
-                            echo "=== Build Count ==="
+                            echo "=== Total Builds ==="
                             tail -n +2 ai-engine/data/build_metrics.csv | wc -l
+                        else
+                            echo "❌ No metrics file found"
                         fi
                     '''
                 }
@@ -104,24 +139,23 @@ pipeline {
                     // Clean up duration format
                     def cleanDuration = duration.replace(' and counting', '')
                     
-                    // Create data directory and append metrics
                     sh """
+                        # Ensure directory exists
                         mkdir -p ai-engine/data
-                        if [ ! -f ai-engine/data/build_metrics.csv ]; then
+                        
+                        # Create or append to metrics file
+                        if [ ! -f "ai-engine/data/build_metrics.csv" ]; then
                             echo "timestamp,duration,status" > ai-engine/data/build_metrics.csv
                         fi
+                        
+                        # Add current build metrics
                         echo "${timestamp},${cleanDuration},${status}" >> ai-engine/data/build_metrics.csv
-                    """
-                    
-                    // Debug: Show what we collected
-                    sh """
-                        echo "=== Updated Metrics File ==="
+                        
+                        echo "=== Updated Metrics ==="
                         cat ai-engine/data/build_metrics.csv
-                        echo "=== Total Builds Recorded ==="
+                        echo "=== Build Count ==="
                         tail -n +2 ai-engine/data/build_metrics.csv | wc -l
                     """
-                    
-                    archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
                 }
             }
         }
@@ -129,50 +163,28 @@ pipeline {
         stage('Train AI Model') {
             steps {
                 script {
-                    echo "🤖 Training AI model based on build metrics..."
-
-                    // Install dependencies
+                    echo "🤖 Training AI model..."
+                    
                     sh """
                         python3 -m pip install --user pandas scikit-learn joblib --break-system-packages
                     """
-
-                    // Train AI model with better error handling
+                    
                     sh '''
-                        echo "=== Training AI Model ==="
+                        echo "=== Starting AI Training ==="
                         if python3 ai-engine/train_model.py; then
                             echo "✅ AI model trained successfully!"
                         else
-                            echo "⚠️ Model training skipped (need more data or encountered error)"
+                            echo "⚠️ AI training completed (may need more data)"
                         fi
                         
-                        # Check if model was created
+                        # Check model status
                         if [ -f "ai-engine/model/build_predictor.pkl" ]; then
-                            echo "🎉 AI model is now ACTIVE and ready for predictions!"
-                            echo "=== Model Info ==="
-                            python3 -c "
-import joblib
-import os
-model_path = 'ai-engine/model/build_predictor.pkl'
-if os.path.exists(model_path):
-    model = joblib.load(model_path)
-    print(f'Model features: {model.n_features_in_}')
-    print(f'Model classes: {model.classes_}')
-    print(f'Model estimators: {model.n_estimators}')
-else:
-    print('No model file found')
-                            "
+                            echo "🎉 AI model is ready for predictions!"
+                            ls -la ai-engine/model/build_predictor.pkl
                         else
-                            echo "📊 Collecting more build data for AI training..."
+                            echo "📊 Still collecting data for AI training..."
                         fi
                     '''
-                }
-            }
-            post {
-                success {
-                    echo "✅ AI training completed"
-                }
-                failure {
-                    echo "⚠️ AI training encountered issues (check logs)"
                 }
             }
         }
@@ -180,34 +192,27 @@ else:
         stage('AI Prediction') {
             steps {
                 script {
-                    echo "🧠 Running AI Model for Build Analysis..."
+                    echo "🧠 Running AI Prediction..."
                     
-                    // Run the prediction script
                     sh '''
                         python3 -m pip install --user pandas scikit-learn joblib --break-system-packages
                         export PYTHONPATH=\$PYTHONPATH:\$(python3 -m site --user-site)
                         python3 ai-engine/predict_failure.py
                     '''
                     
-                    // Always archive the results
-                    archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
-
-                    // Read and parse JSON file manually
+                    // Read and process prediction
                     def predictionFile = readFile(file: 'ai-engine/results/predictions.json').trim()
                     
-                    // Parse JSON manually using Groovy
                     def predictedStatus = "SUCCESS"
                     def confidence = 0.5
                     def modelUsed = false
                     def buildsTrained = 0
-                    def predictedDuration = "60 sec"
                     
-                    // Simple JSON parsing
+                    // Manual JSON parsing
                     if (predictionFile.contains('"predicted_status": "FAILURE"')) {
                         predictedStatus = "FAILURE"
                     }
                     
-                    // Extract confidence if available
                     if (predictionFile.contains('"confidence":')) {
                         def confidenceMatch = (predictionFile =~ /"confidence":\s*([0-9.]+)/)
                         if (confidenceMatch) {
@@ -215,24 +220,14 @@ else:
                         }
                     }
                     
-                    // Check if model was used
                     if (predictionFile.contains('"model_used": true')) {
                         modelUsed = true
                     }
                     
-                    // Extract builds trained on
                     if (predictionFile.contains('"builds_trained_on":')) {
                         def buildsMatch = (predictionFile =~ /"builds_trained_on":\s*([0-9]+)/)
                         if (buildsMatch) {
                             buildsTrained = buildsMatch[0][1].toInteger()
-                        }
-                    }
-                    
-                    // Extract predicted duration
-                    if (predictionFile.contains('"predicted_duration":')) {
-                        def durationMatch = (predictionFile =~ /"predicted_duration":\s*"([^"]+)"/)
-                        if (durationMatch) {
-                            predictedDuration = durationMatch[0][1]
                         }
                     }
                     
@@ -241,20 +236,17 @@ else:
                     echo "   - Confidence: ${confidence}"
                     echo "   - Model Used: ${modelUsed}"
                     echo "   - Builds Trained On: ${buildsTrained}"
-                    echo "   - Predicted Duration: ${predictedDuration}"
                     
-                    // Only fail if model was actually used AND predicts failure with high confidence
-                    if (modelUsed && predictedStatus == "FAILURE") {
-                        if (confidence > 0.7) {
-                            error("🚨 AI predicted possible failure with ${confidence * 100}% confidence — stopping deployment.")
-                        } else {
-                            echo "⚠️ AI shows potential risk but confidence is low. Continuing with caution..."
-                        }
-                    } else if (!modelUsed) {
-                        echo "📊 AI model not yet trained. Collecting more build data..."
+                    // Decision making
+                    if (modelUsed && predictedStatus == "FAILURE" && confidence > 0.7) {
+                        error("🚨 AI predicted failure with ${confidence * 100}% confidence")
+                    } else if (modelUsed) {
+                        echo "✅ AI prediction: Safe to proceed"
                     } else {
-                        echo "✅ AI prediction: Safe to proceed with deployment"
+                        echo "📊 AI still learning - using default prediction"
                     }
+                    
+                    archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
                 }
             }
         }
@@ -263,20 +255,16 @@ else:
             steps {
                 script {
                     sh """
-                        echo "🧹 Cleaning old manifest folder..."
+                        echo "🧹 Cleaning previous deployment..."
                         rm -rf react-counter-deploy
 
                         echo "📥 Cloning deployment repo..."
-                        git clone -b \$MANIFEST_BRANCH \$MANIFEST_REPO react-counter-deploy
+                        git clone -b ${MANIFEST_BRANCH} ${MANIFEST_REPO} react-counter-deploy
 
-                        echo "📝 Updating image tag in deployment.yml..."
-                        sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' react-counter-deploy/k8s/deployment.yml
+                        echo "📝 Updating image tag..."
+                        sed -i 's|image: .*|image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' react-counter-deploy/k8s/deployment.yml
 
-                        echo "✅ Manifest updated to $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
-                        
-                        # Verify the change
-                        echo "=== Updated deployment.yml ==="
-                        grep -n "image:" react-counter-deploy/k8s/deployment.yml || echo "Image line not found"
+                        echo "✅ Updated to: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
                     """
                 }
             }
@@ -293,40 +281,40 @@ else:
                         git config user.name "GowshikM-2005"
 
                         git add k8s/deployment.yml
-                        git commit -m "🚀 Update image tag to $IMAGE_TAG [CI Build #$BUILD_NUMBER]" || echo "No changes to commit."
+                        git commit -m "🚀 CI: Update to ${IMAGE_TAG} [Build #${BUILD_NUMBER}]" || echo "No changes to commit"
 
-                        echo "📤 Pushing updated manifest..."
-                        git push https://\$USER:\$PASS@github.com/GowshikM-2005/react-counter-deploy.git \$MANIFEST_BRANCH
+                        git push https://${USER}:${PASS}@github.com/GowshikM-2005/react-counter-deploy.git ${MANIFEST_BRANCH}
                         
-                        echo "✅ Manifest successfully updated and pushed!"
+                        echo "✅ Manifest deployed successfully!"
                     """
                 }
             }
         }
     }
-    
+
     post {
         always {
-            echo "💾 Archiving AI data for next build..."
-            archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true
+            echo "💾 Archiving build artifacts..."
+            archiveArtifacts artifacts: 'ai-engine/data/build_metrics.csv', fingerprint: true, allowEmptyArchive: true
             archiveArtifacts artifacts: 'ai-engine/model/*.pkl', fingerprint: true, allowEmptyArchive: true
-            archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true
+            archiveArtifacts artifacts: 'ai-engine/results/predictions.json', fingerprint: true, allowEmptyArchive: true
             
-            // Cleanup to save space
+            // Cleanup
             sh '''
-                echo "🧹 Cleaning up temporary files..."
                 rm -rf react-counter-deploy || true
             '''
         }
         success {
-            echo "🎉 Pipeline executed successfully!"
-            echo "📊 Build #${BUILD_NUMBER} completed"
+            echo "🎉 Pipeline completed successfully!"
+            sh '''
+                echo "=== Final AI Status ==="
+                if [ -f "ai-engine/results/predictions.json" ]; then
+                    cat ai-engine/results/predictions.json
+                fi
+            '''
         }
         failure {
-            echo "❌ Pipeline failed at stage: ${currentBuild.result}"
-        }
-        unstable {
-            echo "⚠️ Pipeline marked as unstable"
+            echo "❌ Pipeline failed"
         }
     }
 }
