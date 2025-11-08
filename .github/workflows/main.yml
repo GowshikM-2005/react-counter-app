@@ -6,7 +6,7 @@ on:
   workflow_dispatch: {}
   schedule:
     # GitHub Actions supports 5-minute granularity minimum; use this to emulate pollSCM
-    - cron: "*/5 * * * *"
+    - cron: "*/60 * * * *"
 
 env:
   REGISTRY: gowshikm
