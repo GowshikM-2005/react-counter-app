@@ -4,9 +4,9 @@ on:
   push:
     branches: [ "main" ]
   workflow_dispatch: {}
-  schedule:
-    # GitHub Actions supports 5-minute granularity minimum; use this to emulate pollSCM
-    - cron: "*/60 * * * *"
+  # schedule:
+  #   # GitHub Actions supports 5-minute granularity minimum; use this to emulate pollSCM
+  #   - cron: "*/60 * * * *"
 
 env:
   REGISTRY: gowshikm
