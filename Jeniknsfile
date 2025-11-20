@@ -15,7 +15,7 @@ pipeline {
         pollSCM('* * * * *')
     }
 
-
+    stages {
         stage('Checkout') {
             steps {
                 git branch: 'main',
@@ -33,15 +33,17 @@ pipeline {
 
         stage('Push to Registry') {
             steps {
-                withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS,
-                        usernameVariable: 'USER',
-                        passwordVariable: 'PASS')]) {
+                withCredentials([usernamePassword(
+                    credentialsId: env.DOCKER_CREDENTIALS,
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
                     script {
                         def IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
                         sh """
                             echo "Logging in to Docker Hub..."
                             echo \$PASS | docker login -u \$USER --password-stdin
-                            echo " Pushing image ${IMAGE}..."
+                            echo "Pushing image ${IMAGE}..."
                             docker push ${IMAGE}
                         """
                     }
@@ -49,7 +51,6 @@ pipeline {
             }
         }
 
-       
         stage('Update K8s Manifest') {
             steps {
                 script {
@@ -57,13 +58,13 @@ pipeline {
                         echo "🧹 Cleaning old manifest folder..."
                         rm -rf react-counter-deploy
 
-                        echo " Cloning deployment repo..."
-                        git clone -b \$MANIFEST_BRANCH \$MANIFEST_REPO react-counter-deploy
+                        echo "Cloning deployment repo..."
+                        git clone -b ${MANIFEST_BRANCH} ${MANIFEST_REPO} react-counter-deploy
 
                         echo "Updating image tag in deployment.yml..."
-                        sed -i 's|image: .*|image: $REGISTRY/$IMAGE_NAME:$IMAGE_TAG|g' react-counter-deploy/k8s/deployment.yml
+                        sed -i 's|image: .*|image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' react-counter-deploy/k8s/deployment.yml
 
-                        echo " Manifest updated to $REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+                        echo "Manifest updated to ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
                         
                         # Verify the change
                         echo "=== Updated deployment.yml ==="
@@ -75,26 +76,28 @@ pipeline {
 
         stage('Commit & Push Manifest') {
             steps {
-                withCredentials([usernamePassword(credentialsId: GIT_CREDENTIALS,
-                        usernameVariable: 'USER',
-                        passwordVariable: 'PASS')]) {
-                    sh """
-                        cd react-counter-deploy
-                        git config user.email "gowshik0105@gmail.com"
-                        git config user.name "GowshikM-2005"
+                withCredentials([usernamePassword(
+                    credentialsId: env.GIT_CREDENTIALS,
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
+                    script {
+                        sh """
+                            cd react-counter-deploy
+                            git config user.email "gowshik0105@gmail.com"
+                            git config user.name "GowshikM-2005"
 
-                        git add k8s/deployment.yml
-                        git commit -m "🚀 Update image tag to $IMAGE_TAG [CI Build #$BUILD_NUMBER]" || echo "No changes to commit."
+                            git add k8s/deployment.yml
+                            git commit -m "Update image tag to ${IMAGE_TAG} [CI Build #${env.BUILD_NUMBER}]" || echo "No changes to commit."
 
-                        echo "Pushing updated manifest..."
-                        git push https://\$USER:\$PASS@github.com/GowshikM-2005/react-counter-deploy.git \$MANIFEST_BRANCH
-                        
-                        echo "Manifest successfully updated and pushed!"
-                    """
+                            echo "Pushing updated manifest..."
+                            git push https://\${USER}:\${PASS}@github.com/GowshikM-2005/react-counter-deploy.git ${MANIFEST_BRANCH}
+                            
+                            echo "Manifest successfully updated and pushed!"
+                        """
+                    }
                 }
             }
         }
-    }
-    
     }
 }
